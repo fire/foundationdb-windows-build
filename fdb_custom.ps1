@@ -1,7 +1,5 @@
 param(
-    [Parameter(Mandatory = $true)][string]$RunId,
-    [Parameter(Mandatory = $true)][string]$SlackPath,
-    [Parameter(Mandatory = $true)][string]$PullRequest
+    [Parameter(Mandatory = $true)][string]$CommitId
 )
 
 class PullRequest{
@@ -68,13 +66,6 @@ function BuildMainBranch{
     $SubCommitId = $CommitId.Substring(0,6)
     TraceLine "Commit id: $CommitId"
     $global:BranchLogFile = "$global:LogDir\$LogFileName"
-    try{
-        Build
-        $global:MainSlackText = "$global:MainSlackText\u2714   $Branch (``<$CommitPath/$CommitId|$SubCommitId>``):   *SUCCEEDED*\n"
-    }
-    catch{
-        $global:MainSlackText = "$global:MainSlackText\u274C   $Branch (``<$CommitPath/$CommitId|$SubCommitId>``):   *FAILED*\n"
-    }
     $global:LogFile = $global:MainLogFile
 }
 
@@ -102,13 +93,6 @@ function BuildPRs{
     TraceLine "Commit id: $CommitId"
     
     $global:BranchLogFile = "$global:LogDir\$LogFileName"
-    try{
-        Build
-        $global:PRsSlackText = "$global:PRsSlackText\u2714   <$PRPath/$($PR.Id)|#$($PR.Id)> (``<$CommitPath/$CommitId|$SubCommitId>``): $($PR.Title)\n"
-    }
-    catch{
-        $global:PRsSlackText = "$global:PRsSlackText\u274C   <$PRPath/$($PR.Id)|#$($PR.Id)> (``<$CommitPath/$CommitId|$SubCommitId>``): $($PR.Title)\n"
-    }
     $global:LogFile = $global:MainLogFile
 }
 
@@ -128,12 +112,9 @@ $global:LogDir = "$BuildDir\build_logs"
 $global:FDBRepos = "https://github.com/apple/foundationdb/"
 $global:CommitPath = "https://github.com/apple/foundationdb/commit"
 $global:PRPath = "https://github.com/apple/foundationdb/pull"
-$global:LogPath = "https://github.com/Doxense/foundationdb-windows-build/actions/runs/$RunId"
 $global:MainLogFile = "$BuildDir\..\build_history\fdb-nightlies-build.$(Get-Date -Format "yyyy-MM-dd").log"
 $global:BranchLogFile
 $global:LogFile = $global:MainLogFile
-$global:MainSlackText = ""
-$global:PrsSLackText = ""
 $global:SubcommandFailed
 
 # Prepare build environment
@@ -178,7 +159,7 @@ foreach($PR in $PRsList){
 
 $RecentPRs = New-Object Collections.Generic.List[PullRequest]
 foreach($PR in $PullRequests) {
-    if($PR.Id -eq $PullRequest){
+    if($PR.Id -eq $CommitId){
         $RecentPRs.Add($PR)
     }
 }
@@ -190,24 +171,6 @@ foreach($PR in $RecentPRs){
 foreach($PR in $RecentPRs){
     BuildPRs $PR
 }
-
-if($global:PRsSlackText.Length -eq 0){
-    $global:PRsSlackText = "\u2714   No new pull request to build"
-}
-
-$SlackMessageTemplate = "$BuildDir\sources\skack_message_template.json"
-$SlackMessage = Get-Content $SlackMessageTemplate
-$global:MainSlackText = $global:MainSlackText -replace "master", "master       "
-$SlackMessage = $SlackMessage -replace "main-text", $global:MainSlackText
-$SlackMessage = $SlackMessage -replace "pr-text", $global:PRsSlackText
-$SlackMessage = $SlackMessage -replace "log-text", "Build logs available <$global:LogPath|here> for 90 days"
-Write-Output [string]$SlackMessage
-
-# Post build results to Slack
-$headers = New-Object "System.Collections.Generic.Dictionary[[String],[String]]"
-$headers.Add("Content-Type", "application/json")
-#RunPS -Command "Invoke-RestMethod `$SlackPath -Method 'POST' -Headers `$headers -Body `$SlackMessage"
-RunPS -Command "Set-Location ""$BuildDir"""
 
 if($SubcommandFailed){
     Write-Output "Nightlies process completed, but one or several builds failed"
